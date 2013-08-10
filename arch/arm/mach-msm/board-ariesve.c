@@ -3235,7 +3235,7 @@ static struct platform_device acc_i2c_gpio_device = {
 
 static struct i2c_board_info acc_i2c_devices[] = {
 	{
-		I2C_BOARD_INFO("accelerometer", 0x08), /* [HSS] BMA023 : 0x38, BMA222 : 0x08 */
+		I2C_BOARD_INFO("YamahaBMA222", 0x08), /* [HSS] BMA023 : 0x38, BMA222 : 0x08 */
 	},
 };
 #endif
@@ -3255,7 +3255,7 @@ static struct platform_device mag_i2c_gpio_device = {
 
 static struct i2c_board_info mag_i2c_devices[] = {
 	{
-		I2C_BOARD_INFO("geomagnetic", 0x2E),		// 0x2E
+		I2C_BOARD_INFO("magnetic", 0x2E),		// 0x2E
 	},
 };
 
