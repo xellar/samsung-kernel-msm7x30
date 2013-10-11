@@ -33,19 +33,19 @@
 
 #define __LINUX_KERNEL_DRIVER__
 #include "yas.h"
-#include "yas_mag_driver-yas529.c"
+#include "yas_mag_driver.c"
 
-#define GEOMAGNETIC_I2C_DEVICE_NAME         "magnetic"
-#define GEOMAGNETIC_INPUT_NAME              "magnetic_sensor"
-#define GEOMAGNETIC_INPUT_RAW_NAME          "raw_magnetic_sensor"
+#define GEOMAGNETIC_I2C_DEVICE_NAME         "geomagnetic"
+#define GEOMAGNETIC_INPUT_NAME              "geomagnetic"
+#define GEOMAGNETIC_INPUT_RAW_NAME          "geomagnetic_raw"
 
-#define REL_STATUS                          (REL_RX)
-#define REL_WAKE                            (REL_RY)
+#define ABS_STATUS                          (ABS_BRAKE)
+#define ABS_WAKE                            (ABS_MISC)
 
-#define REL_RAW_DISTORTION                  (REL_HWHEEL)
-#define REL_RAW_THRESHOLD                   (REL_DIAL)
-#define REL_RAW_SHAPE                       (REL_WHEEL)
-#define REL_RAW_REPORT                      (REL_MISC)
+#define ABS_RAW_DISTORTION                  (ABS_THROTTLE)
+#define ABS_RAW_THRESHOLD                   (ABS_RUDDER)
+#define ABS_RAW_SHAPE                       (ABS_WHEEL)
+#define ABS_RAW_REPORT                      (ABS_GAS)
 #if defined (CONFIG_MACH_ARIESVE)    //AriesVE
 #define YAS_CDRV_YAS529_POSITION    7
 #else                                              // Dante
@@ -89,6 +89,7 @@ geomagnetic_i2c_close(void)
     return 0;
 }
 
+#if YAS_MAG_DRIVER == YAS_MAG_DRIVER_YAS529
 static int
 geomagnetic_i2c_write(uint8_t slave, const uint8_t *buf, int len)
 {
@@ -139,6 +140,85 @@ geomagnetic_i2c_read(uint8_t slave, uint8_t *buf, int len)
     return 0;
 }
 
+#else
+
+static int
+geomagnetic_i2c_write(uint8_t slave, uint8_t addr, const uint8_t *buf, int len)
+{
+    uint8_t tmp[16];
+
+    if (sizeof(tmp) -1 < len) {
+        return -1;
+    }
+
+    tmp[0] = addr;
+    memcpy(&tmp[1], buf, len);
+
+    if (i2c_master_send(this_client, tmp, len + 1) < 0) {
+        return -1;
+    }
+#if DEBUG
+    YLOGD(("[W] addr[%02x] [%02x]\n", addr, buf[0]));
+#endif
+
+    return 0;
+}
+
+static int
+geomagnetic_i2c_read(uint8_t slave, uint8_t addr, uint8_t *buf, int len)
+{
+    struct i2c_msg msg[2];
+    int err;
+
+    msg[0].addr = slave;
+    msg[0].flags = 0;
+    msg[0].len = 1;
+    msg[0].buf = &addr;
+    msg[1].addr = slave;
+    msg[1].flags = I2C_M_RD;
+    msg[1].len = len;
+    msg[1].buf = buf;
+
+    err = i2c_transfer(this_client->adapter, msg, 2);
+    if (err != 2) {
+        dev_err(&this_client->dev,
+                "i2c_transfer() read error: slave_addr=%02x, reg_addr=%02x, err=%d\n", slave, addr, err);
+        return err;
+    }
+
+
+#if DEBUG
+    if (len == 1) {
+        YLOGD(("[R] addr[%02x] [%02x]\n", addr, buf[0]));
+    }
+    else if (len == 6) {
+        YLOGD(("[R] addr[%02x] "
+        "[%02x%02x%02x%02x%02x%02x]\n",
+        addr, buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]));
+    }
+    else if (len == 8) {
+        YLOGD(("[R] addr[%02x] "
+        "[%02x%02x%02x%02x%02x%02x%02x%02x]\n",
+        addr, buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]));
+    }
+    else if (len == 9) {
+        YLOGD(("[R] addr[%02x] "
+        "[%02x%02x%02x%02x%02x%02x%02x%02x%02x]\n",
+        addr, buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7], buf[8]));
+    }
+    else if (len == 16) {
+        YLOGD(("[R] addr[%02x] "
+        "[%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x]\n",
+        addr,
+        buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
+        buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15]));
+    }
+#endif
+
+    return 0;
+}
+
+#endif
 
 static int
 geomagnetic_lock(void)
@@ -604,7 +684,7 @@ geomagnetic_wake_store(struct device *dev,
     struct geomagnetic_data *data = input_get_drvdata(input_data);
     static int16_t cnt = 1;
 
-    input_report_rel(data->input_data, REL_WAKE, cnt++);
+    input_report_abs(data->input_data, ABS_WAKE, cnt++);
 
     return count;
 }
@@ -719,7 +799,7 @@ geomagnetic_raw_threshold_store(struct device *dev,
 
     if (0 <= value && value <= 2) {
         data->threshold = value;
-        input_report_rel(data->input_raw, REL_RAW_THRESHOLD, value);
+        input_report_abs(data->input_raw, ABS_RAW_THRESHOLD, value);
     }
 
     geomagnetic_multi_unlock();
@@ -770,7 +850,7 @@ geomagnetic_raw_distortion_store(struct device *dev,
         for (i = 0; i < 3; i++) {
             data->distortion[i] = distortion[i];
         }
-        input_report_rel(data->input_raw, REL_RAW_DISTORTION, val++);
+        input_report_abs(data->input_raw, ABS_RAW_DISTORTION, val++);
     }
 
     geomagnetic_multi_unlock();
@@ -810,7 +890,7 @@ geomagnetic_raw_shape_store(struct device *dev,
 
     if (0 <= value && value <= 1) {
         data->shape = value;
-        input_report_rel(data->input_raw, REL_RAW_SHAPE, value);
+        input_report_abs(data->input_raw, ABS_RAW_SHAPE, value);
     }
 
     geomagnetic_multi_unlock();
@@ -955,7 +1035,7 @@ geomagnetic_input_work_func(struct work_struct *work)
             code |= (rt & YAS_REPORT_HARD_OFFSET_CHANGED);
             code |= (rt & YAS_REPORT_CALIB_OFFSET_CHANGED);
             value = (count++ << 16) | (code);
-            input_report_rel(data->input_raw, REL_RAW_REPORT, value);
+            input_report_abs(data->input_raw, ABS_RAW_REPORT, value);
         }
 
         if (rt & YAS_REPORT_DATA) {
@@ -964,18 +1044,18 @@ geomagnetic_input_work_func(struct work_struct *work)
             }
 
             /* report magnetic data in [nT] */
-            input_report_rel(data->input_data, REL_X, magdata.xyz.v[0]);
-            input_report_rel(data->input_data, REL_Y, magdata.xyz.v[1]);
-            input_report_rel(data->input_data, REL_Z, magdata.xyz.v[2]);
-            input_report_rel(data->input_data, REL_STATUS, accuracy);
+            input_report_abs(data->input_data, ABS_X, magdata.xyz.v[0]);
+            input_report_abs(data->input_data, ABS_Y, magdata.xyz.v[1]);
+            input_report_abs(data->input_data, ABS_Z, magdata.xyz.v[2]);
+            input_report_abs(data->input_data, ABS_STATUS, accuracy);
             input_sync(data->input_data);
         }
 
         if (rt & YAS_REPORT_CALIB) {
             /* report raw magnetic data */
-            input_report_rel(data->input_raw, REL_X, magdata.raw.v[0]);
-            input_report_rel(data->input_raw, REL_Y, magdata.raw.v[1]);
-            input_report_rel(data->input_raw, REL_Z, magdata.raw.v[2]);
+            input_report_abs(data->input_raw, ABS_X, magdata.raw.v[0]);
+            input_report_abs(data->input_raw, ABS_Y, magdata.raw.v[1]);
+            input_report_abs(data->input_raw, ABS_Z, magdata.raw.v[2]);
             input_sync(data->input_raw);
         }
     }
@@ -1064,12 +1144,12 @@ geomagnetic_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
     input_data->name = GEOMAGNETIC_INPUT_NAME;
     input_data->id.bustype = BUS_I2C;
-    set_bit(EV_REL, input_data->evbit);
-    input_set_capability(input_data, EV_REL, REL_X);
-    input_set_capability(input_data, EV_REL, REL_Y);
-    input_set_capability(input_data, EV_REL, REL_Z);
-    input_set_capability(input_data, EV_REL, REL_STATUS);
-    input_set_capability(input_data, EV_REL, REL_WAKE);
+    set_bit(EV_ABS, input_data->evbit);
+    input_set_capability(input_data, EV_ABS, ABS_X);
+    input_set_capability(input_data, EV_ABS, ABS_Y);
+    input_set_capability(input_data, EV_ABS, ABS_Z);
+    input_set_capability(input_data, EV_ABS, ABS_STATUS);
+    input_set_capability(input_data, EV_ABS, ABS_WAKE);
     input_data->dev.parent = &client->dev;
 
     rt = input_register_device(input_data);
@@ -1079,11 +1159,11 @@ geomagnetic_probe(struct i2c_client *client, const struct i2c_device_id *id)
         goto err;
     }
 
-	input_set_abs_params(input_data, REL_X, -(1<<31), (1<<31), 0, 0);
-	input_set_abs_params(input_data, REL_Y, -(1<<31), (1<<31), 0, 0);
-	input_set_abs_params(input_data, REL_Z, -(1<<31), (1<<31), 0, 0);
-	input_set_abs_params(input_data, REL_STATUS, 0, (1<<16), 0, 0);
-	input_set_abs_params(input_data, REL_WAKE, 0, (1<<31), 0, 0);
+	input_set_abs_params(input_data, ABS_X, -(1<<31), (1<<31), 0, 0);
+	input_set_abs_params(input_data, ABS_Y, -(1<<31), (1<<31), 0, 0);
+	input_set_abs_params(input_data, ABS_Z, -(1<<31), (1<<31), 0, 0);
+	input_set_abs_params(input_data, ABS_STATUS, 0, (1<<16), 0, 0);
+	input_set_abs_params(input_data, ABS_WAKE, 0, (1<<31), 0, 0);
 
     data_registered = 1;
 
@@ -1105,14 +1185,14 @@ geomagnetic_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
     input_raw->name = GEOMAGNETIC_INPUT_RAW_NAME;
     input_raw->id.bustype = BUS_I2C;
-    set_bit(EV_REL, input_raw->evbit);
-    input_set_capability(input_raw, EV_REL, REL_X);
-    input_set_capability(input_raw, EV_REL, REL_Y);
-    input_set_capability(input_raw, EV_REL, REL_Z);
-    input_set_capability(input_raw, EV_REL, REL_RAW_DISTORTION);
-    input_set_capability(input_raw, EV_REL, REL_RAW_THRESHOLD);
-    input_set_capability(input_raw, EV_REL, REL_RAW_SHAPE);
-    input_set_capability(input_raw, EV_REL, REL_RAW_REPORT);
+    set_bit(EV_ABS, input_raw->evbit);
+    input_set_capability(input_raw, EV_ABS, ABS_X);
+    input_set_capability(input_raw, EV_ABS, ABS_Y);
+    input_set_capability(input_raw, EV_ABS, ABS_Z);
+    input_set_capability(input_raw, EV_ABS, ABS_RAW_DISTORTION);
+    input_set_capability(input_raw, EV_ABS, ABS_RAW_THRESHOLD);
+    input_set_capability(input_raw, EV_ABS, ABS_RAW_SHAPE);
+    input_set_capability(input_raw, EV_ABS, ABS_RAW_REPORT);
     input_raw->dev.parent = &client->dev;
 
     rt = input_register_device(input_raw);
@@ -1122,14 +1202,13 @@ geomagnetic_probe(struct i2c_client *client, const struct i2c_device_id *id)
         goto err;
     }
 
-	input_set_abs_params(input_raw, REL_X, -(1<<31), (1<<31), 0, 0);
-	input_set_abs_params(input_raw, REL_Y, -(1<<31), (1<<31), 0, 0);
-	input_set_abs_params(input_raw, REL_Z, -(1<<31), (1<<31), 0, 0);
-	input_set_abs_params(input_raw, REL_RAW_DISTORTION, 0, 2, 0, 0);
-	input_set_abs_params(input_raw, REL_RAW_THRESHOLD, 0, 2, 0, 0);
-	input_set_abs_params(input_raw, REL_RAW_SHAPE, 0, 1, 0, 0);
-	input_set_abs_params(input_raw, REL_RAW_REPORT, 0, (1<<31), 0, 0);
-
+	input_set_abs_params(input_raw, ABS_X, -(1<<31), (1<<31), 0, 0);
+	input_set_abs_params(input_raw, ABS_Y, -(1<<31), (1<<31), 0, 0);
+	input_set_abs_params(input_raw, ABS_Z, -(1<<31), (1<<31), 0, 0);
+	input_set_abs_params(input_raw, ABS_RAW_DISTORTION, 0, 2, 0, 0);
+	input_set_abs_params(input_raw, ABS_RAW_THRESHOLD, 0, 2, 0, 0);
+	input_set_abs_params(input_raw, ABS_RAW_SHAPE, 0, 1, 0, 0);
+	input_set_abs_params(input_raw, ABS_RAW_REPORT, 0, (1<<31), 0, 0);
     raw_registered = 1;
 
     rt = sysfs_create_group(&input_raw->dev.kobj,
@@ -1296,6 +1375,10 @@ module_init(geomagnetic_init);
 module_exit(geomagnetic_term);
 
 MODULE_AUTHOR("Yamaha Corporation");
+#if YAS_MAG_DRIVER == YAS_MAG_DRIVER_YAS529
 MODULE_DESCRIPTION("YAS529 Geomagnetic Sensor Driver");
+#elif YAS_MAG_DRIVER == YAS_MAG_DRIVER_YAS530
+MODULE_DESCRIPTION("YAS530 Geomagnetic Sensor Driver");
+#endif
 MODULE_LICENSE( "GPL" );
 MODULE_VERSION("3.0.401");

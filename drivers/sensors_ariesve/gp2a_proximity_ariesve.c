@@ -357,7 +357,7 @@ static void gp2a_work_func_prox(struct work_struct *work)
 
     value = get_ps_vout_value(); 
 
-    input_report_abs(gp2a->input_dev, ABS_DISTANCE,  value);
+    input_report_abs(gp2a->input_dev, ABS_X,  value);
     input_sync(gp2a->input_dev);
 
 	gp2a->prox_data= value;
@@ -487,17 +487,17 @@ static int proximity_input_init(struct gp2a_data *data)
 	}
 
 	set_bit(EV_ABS, dev->evbit);
-	input_set_capability(dev, EV_ABS, ABS_DISTANCE);
+	input_set_capability(dev, EV_ABS, ABS_X);
 	input_set_capability(dev, EV_ABS, ABS_STATUS); /* status */
 	input_set_capability(dev, EV_ABS, ABS_WAKE); /* wake */
 	input_set_capability(dev, EV_ABS, ABS_CONTROL_REPORT); /* enabled/delay */
-	input_set_abs_params(dev, ABS_DISTANCE, 0, 1, 0, 0);
+	input_set_abs_params(dev, ABS_X, 0, 1, 0, 0);
 	input_set_abs_params(dev, ABS_STATUS, 0, (1<<16), 0, 0);
 	input_set_abs_params(dev, ABS_WAKE, 0, (1<<31), 0, 0);
 	input_set_abs_params(dev, ABS_CONTROL_REPORT, 0, 1<<16, 0, 0);
 
 
-	dev->name = "proximity_sensor";
+	dev->name = "proximity";
 	input_set_drvdata(dev, data);
 
 	err = input_register_device(dev);
